@@ -1,0 +1,53 @@
+{
+  "version": "8",
+  "dialect": "postgres",
+  "id": "f925199d-5c0f-4a13-b5aa-80bcb027da2b",
+  "prevIds": [
+    "00000000-0000-0000-0000-000000000000"
+  ],
+  "ddl": [
+    {
+      "isRlsEnabled": false,
+      "name": "schedules",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedules"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "alarms",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "schedules"
+    },
+    {
+      "columns": [
+        "owner"
+      ],
+      "nameExplicit": false,
+      "name": "schedules_pkey",
+      "schema": "public",
+      "table": "schedules",
+      "entityType": "pks"
+    }
+  ],
+  "renames": []
+}
