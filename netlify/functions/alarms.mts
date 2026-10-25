@@ -2,18 +2,28 @@ import { drizzle } from 'drizzle-orm/netlify-db'
 import { eq } from 'drizzle-orm'
 import type { Config, Context } from '@netlify/functions'
 import { schedules } from '../../db/schema'
-import { examples } from '../../src/lib/alarms'
+import { examples, MAX_DAYS, normalize, tones } from '../../src/lib/alarms'
 import { z } from 'zod'
 export default async (req: Request, context: Context) => {
   const alarm = z.object({
     id: z.string().min(1).max(100),
     name: z.string().trim().min(1).max(60),
-    time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-    work: z.number().int().min(1).max(60),
-    rest: z.number().int().min(0).max(60),
     start: z.iso.date(),
     enabled: z.boolean(),
-    tone: z.enum(['Amanecer', 'Brisa', 'Órbita']),
+    tone: z.enum(tones),
+    days: z
+      .array(
+        z
+          .string()
+          .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+          .nullable(),
+      )
+      .min(1)
+      .max(MAX_DAYS),
+  })
+  const body = z.object({
+    alarms: z.array(alarm).max(100),
+    vacations: z.array(z.iso.date()).max(1000),
   })
   if (!['GET', 'PUT'].includes(req.method))
     return new Response('Método no permitido', { status: 405 })
@@ -38,23 +48,21 @@ export default async (req: Request, context: Context) => {
   try {
     const db = drizzle()
     if (req.method === 'PUT') {
-      const parsed = z
-        .array(alarm)
-        .max(100)
-        .safeParse(await req.json())
+      const parsed = body.safeParse(await req.json().catch(() => null))
       if (!parsed.success)
         return Response.json(
           { error: 'Revisa los datos de las alarmas.' },
           { status: 400 },
         )
+      const data = {
+        alarms: parsed.data.alarms,
+        vacations: [...new Set(parsed.data.vacations)].sort(),
+      }
       await db
         .insert(schedules)
-        .values({ owner, alarms: parsed.data })
-        .onConflictDoUpdate({
-          target: schedules.owner,
-          set: { alarms: parsed.data },
-        })
-      return Response.json(parsed.data, {
+        .values({ owner, ...data })
+        .onConflictDoUpdate({ target: schedules.owner, set: data })
+      return Response.json(data, {
         headers: { 'Cache-Control': 'no-store' },
       })
     }
@@ -63,15 +71,21 @@ export default async (req: Request, context: Context) => {
       .from(schedules)
       .where(eq(schedules.owner, owner))
     if (row)
-      return Response.json(row.alarms, {
-        headers: { 'Cache-Control': 'no-store' },
-      })
+      return Response.json(
+        { alarms: row.alarms.map(normalize), vacations: row.vacations },
+        {
+          headers: { 'Cache-Control': 'no-store' },
+        },
+      )
     const initial = examples(new Date().toISOString().slice(0, 10))
     await db
       .insert(schedules)
       .values({ owner, alarms: initial })
       .onConflictDoNothing()
-    return Response.json(initial, { headers: { 'Cache-Control': 'no-store' } })
+    return Response.json(
+      { alarms: initial, vacations: [] },
+      { headers: { 'Cache-Control': 'no-store' } },
+    )
   } catch {
     return Response.json(
       {
