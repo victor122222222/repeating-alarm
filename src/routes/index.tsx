@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlarmClock,
   AudioLines,
@@ -11,6 +11,7 @@ import {
   Coffee,
   HelpCircle,
   LayoutGrid,
+  ListOrdered,
   Moon,
   MoreHorizontal,
   Plus,
@@ -18,6 +19,7 @@ import {
   Settings2,
   Sun,
   Sunrise,
+  TreePalm,
   Volume2,
 } from 'lucide-react'
 import {
@@ -29,13 +31,35 @@ import {
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { activeOn, dateKey, nextAlarm, type Alarm } from '@/lib/alarms'
+import {
+  cycle,
+  cycleIndex,
+  dateForDay,
+  dateKey,
+  MAX_DAYS,
+  nextAlarm,
+  shiftTime,
+  tones,
+  type Alarm,
+} from '@/lib/alarms'
+import { playTone } from '@/lib/sound'
+import { PlanView } from '@/components/plan-view'
+import { SlideToUnlock } from '@/components/slide-to-unlock'
 
 export const Route = createFileRoute('/')({ component: Home })
 const days = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 const icons = [Sunrise, Sun, Moon]
+const hm = (d: Date) => d.toTimeString().slice(0, 5)
+type DayEdit = {
+  planId: string
+  index: number
+  time: string | null
+  isNew: boolean
+}
 function Home() {
   const [alarms, setAlarms] = useState<Alarm[]>([])
+  const [vacations, setVacations] = useState<string[]>([])
+  const vacationSet = useMemo(() => new Set(vacations), [vacations])
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -44,12 +68,17 @@ function Home() {
   const [filter, setFilter] = useState('Todas')
   const [monthOffset, setMonthOffset] = useState(0)
   const [edit, setEdit] = useState<Alarm | null>(null)
+  const [quickTime, setQuickTime] = useState('07:00')
+  const [planId, setPlanId] = useState<string | null>(null)
+  const [dayEdit, setDayEdit] = useState<DayEdit | null>(null)
+  const [vacationMode, setVacationMode] = useState(false)
   const [help, setHelp] = useState(false)
-  const [ringing, setRinging] = useState<Alarm | null>(null)
+  const [ringing, setRinging] = useState<{
+    alarm: Alarm
+    time: string
+    key: string
+  } | null>(null)
   const [sound, setSound] = useState(false)
-  const [snoozed, setSnoozed] = useState<{ alarm: Alarm; at: number } | null>(
-    null,
-  )
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
   const audio = useRef<AudioContext | null>(null)
   const fired = useRef(new Set<string>())
@@ -59,7 +88,9 @@ function Home() {
     try {
       const res = await fetch('/api/alarms')
       if (!res.ok) throw Error()
-      setAlarms(await res.json())
+      const data: { alarms: Alarm[]; vacations: string[] } = await res.json()
+      setAlarms(data.alarms)
+      setVacations(data.vacations)
     } catch {
       setFailed(true)
     } finally {
@@ -72,64 +103,50 @@ function Home() {
     const timer = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
-  function play(tone = 'Amanecer') {
-    const ctx = audio.current
-    if (!ctx) return
-    void ctx.resume()
-    for (let i = 0; i < 3; i++) {
-      const oscillator = ctx.createOscillator()
-      const gain = ctx.createGain()
-      oscillator.type = 'sine'
-      oscillator.frequency.value =
-        (tone === 'Brisa' ? 660 : tone === 'Órbita' ? 440 : 880) + i * 110
-      gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.35)
-      gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + i * 0.35 + 0.03)
-      gain.gain.exponentialRampToValueAtTime(
-        0.001,
-        ctx.currentTime + i * 0.35 + 0.3,
-      )
-      oscillator.connect(gain)
-      gain.connect(ctx.destination)
-      oscillator.start(ctx.currentTime + i * 0.35)
-      oscillator.stop(ctx.currentTime + i * 0.35 + 0.32)
-    }
+  function play(tone = 'Sirena') {
+    if (audio.current) playTone(audio.current, tone)
   }
   useEffect(() => {
-    if (!now) return
+    if (!now || vacationSet.has(dateKey(now))) return
     for (const a of alarms) {
-      const key = `${a.id}-${dateKey(now)}-${a.time}`
-      if (
-        a.enabled &&
-        activeOn(a, now) &&
-        now.toTimeString().slice(0, 5) === a.time &&
-        !fired.current.has(key)
-      ) {
+      const time = shiftTime(a, now)
+      const key = `${a.id}-${dateKey(now)}-${time}`
+      if (a.enabled && time === hm(now) && !fired.current.has(key)) {
         fired.current.add(key)
-        setRinging(a)
+        setRinging({ alarm: a, time, key })
       }
     }
-    if (snoozed && now.getTime() >= snoozed.at) {
-      if (alarms.some((a) => a.id === snoozed.alarm.id && a.enabled))
-        setRinging(snoozed.alarm)
-      setSnoozed(null)
-    }
-  }, [now, alarms, snoozed])
+  }, [now, alarms, vacationSet])
+  // Suena y vibra sin parar hasta que se desliza el control de desbloqueo.
   useEffect(() => {
-    if (!ringing || !sound) return
-    play(ringing.tone)
-    const timer = setInterval(() => play(ringing.tone), 2500)
-    return () => clearInterval(timer)
+    if (!ringing) return
+    const ring = () => {
+      if (sound && audio.current) playTone(audio.current, ringing.alarm.tone)
+      navigator.vibrate?.([900, 300, 700])
+    }
+    ring()
+    const timer = setInterval(ring, 2000)
+    return () => {
+      clearInterval(timer)
+      navigator.vibrate?.(0)
+    }
   }, [ringing, sound])
-  async function persist(next: Alarm[]) {
+  async function persist(next: { alarms?: Alarm[]; vacations?: string[] }) {
     setSaving(true)
     try {
+      const body = {
+        alarms: next.alarms ?? alarms,
+        vacations: next.vacations ?? vacations,
+      }
       const res = await fetch('/api/alarms', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
+        body: JSON.stringify(body),
       })
       if (!res.ok) throw Error()
-      setAlarms(next)
+      const saved: typeof body = await res.json()
+      setAlarms(saved.alarms)
+      setVacations(saved.vacations)
       return true
     } catch {
       toast.error('No se han guardado los cambios. Vuelve a intentarlo.')
@@ -151,7 +168,7 @@ function Home() {
   }
   const today = now ?? new Date('2026-10-25T12:00:00')
   const upcoming = alarms
-    .map((a) => ({ alarm: a, date: nextAlarm(a, today) }))
+    .map((a) => ({ alarm: a, date: nextAlarm(a, today, vacationSet) }))
     .filter((x) => x.date)
     .sort((a, b) => a.date!.getTime() - b.date!.getTime())
   const next = upcoming[0]
@@ -188,18 +205,63 @@ function Home() {
     (a) =>
       filter === 'Todas' || (filter === 'Activas' ? a.enabled : !a.enabled),
   )
+  const plan = alarms.find((a) => a.id === planId) ?? alarms[0]
+  const dayPlan = alarms.find((a) => a.id === dayEdit?.planId)
   function newAlarm() {
+    setQuickTime('07:00')
     setEdit({
       id: crypto.randomUUID(),
       name: '',
-      time: '07:00',
-      work: 4,
-      rest: 2,
       start: dateKey(today),
       enabled: true,
-      tone: 'Amanecer',
+      tone: 'Sirena',
+      days: cycle(4, 2, '07:00'),
     })
   }
+  function editAlarm(a: Alarm) {
+    setQuickTime(a.days.find(Boolean) ?? '07:00')
+    setEdit({ ...a, days: [...a.days] })
+  }
+  const togglePlan = (a: Alarm, enabled: boolean) =>
+    void persist({
+      alarms: alarms.map((x) => (x.id === a.id ? { ...x, enabled } : x)),
+    })
+  async function saveDay(d: DayEdit) {
+    const p = alarms.find((a) => a.id === d.planId)
+    if (!p) return null
+    const days = d.isNew
+      ? [...p.days, d.time]
+      : p.days.map((t, i) => (i === d.index ? d.time : t))
+    if (!d.isNew && p.days[d.index] === d.time) return days
+    const ok = await persist({
+      alarms: alarms.map((a) => (a.id === p.id ? { ...a, days } : a)),
+    })
+    return ok ? days : null
+  }
+  async function toggleVacation(d: Date) {
+    if (saving) return
+    const key = dateKey(d)
+    const on = !vacationSet.has(key)
+    if (
+      await persist({
+        vacations: on
+          ? [...vacations, key]
+          : vacations.filter((v) => v !== key),
+      })
+    )
+      toast.success(
+        on
+          ? 'Día marcado como vacaciones: no sonará ninguna alarma'
+          : 'Vacaciones quitadas de este día',
+      )
+  }
+  const selectedVacation = selectedDay && vacationSet.has(dateKey(selectedDay))
+  const selectedShifts = selectedDay
+    ? alarms
+        .filter((a) => a.enabled)
+        .map((a) => ({ a, time: shiftTime(a, selectedDay) }))
+        .filter((x) => x.time)
+    : []
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -213,7 +275,7 @@ function Home() {
         <nav aria-label="Navegación principal">
           {[
             { name: 'Alarmas', icon: AlarmClock },
-            { name: 'Mis ciclos', icon: Repeat2 },
+            { name: 'Planificación', icon: ListOrdered },
             { name: 'Calendario', icon: CalendarDays },
           ].map(({ name, icon: Icon }) => (
             <button
@@ -276,8 +338,8 @@ function Home() {
               <h1>
                 {view === 'Alarmas'
                   ? 'Tus alarmas. Tu ritmo.'
-                  : view === 'Mis ciclos'
-                    ? 'Un ciclo para cada turno.'
+                  : view === 'Planificación'
+                    ? 'Cada día de tu ciclo.'
                     : view === 'Calendario'
                       ? 'Tus días, de un vistazo.'
                       : 'A tu manera.'}
@@ -289,7 +351,8 @@ function Home() {
               onClick={newAlarm}
               disabled={loading || failed}
             >
-              <Plus size={18} /> Nueva alarma
+              <Plus size={18} />{' '}
+              {view === 'Planificación' ? 'Nuevo plan' : 'Nueva alarma'}
             </button>
           </div>
           {view === 'Ajustes' ? (
@@ -320,7 +383,7 @@ function Home() {
                     {next ? 'PRÓXIMA ALARMA' : 'TU PRÓXIMO COMIENZO'}
                   </div>
                   <div className="next-time">
-                    {next ? next.alarm.time : '— : —'}
+                    {next ? hm(next.date!) : '— : —'}
                     <span>
                       {next ? next.alarm.name : 'Sin alarmas activas'}
                       <small>
@@ -334,12 +397,12 @@ function Home() {
                     <span>
                       <Repeat2 size={13} />
                       {next
-                        ? `${next.alarm.work} días de trabajo · ${next.alarm.rest} de descanso`
+                        ? `Ciclo de ${next.alarm.days.length} días · ${next.alarm.days.filter(Boolean).length} con turno`
                         : 'Ciclos a tu medida'}
                     </span>
                     <span>
                       <Volume2 size={13} />
-                      {next ? next.alarm.tone : 'Sonidos suaves'}
+                      {next ? next.alarm.tone : 'Sonido fuerte'}
                     </span>
                   </div>
                 </div>
@@ -360,11 +423,39 @@ function Home() {
               <div
                 className={`content-grid ${view === 'Calendario' ? 'calendar-view' : ''}`}
               >
+                {view === 'Planificación' && !loading && !failed ? (
+                  <PlanView
+                    alarms={alarms}
+                    plan={plan}
+                    today={today}
+                    vacations={vacationSet}
+                    saving={saving}
+                    onSelect={setPlanId}
+                    onNew={newAlarm}
+                    onEdit={editAlarm}
+                    onToggle={togglePlan}
+                    onDay={(p, index) =>
+                      setDayEdit({
+                        planId: p.id,
+                        index,
+                        time: p.days[index],
+                        isNew: false,
+                      })
+                    }
+                    onAddDay={(p) =>
+                      setDayEdit({
+                        planId: p.id,
+                        index: p.days.length,
+                        time: p.days.slice().reverse().find(Boolean) ?? '07:00',
+                        isNew: true,
+                      })
+                    }
+                  />
+                ) : (
                 <section className="alarms-section">
                   <div className="section-heading">
                     <h2>
-                      {view === 'Mis ciclos' ? 'Mis ciclos' : 'Mis alarmas'}{' '}
-                      <span>{alarms.length}</span>
+                      Mis alarmas <span>{alarms.length}</span>
                     </h2>
                     <div className="segmented" aria-label="Filtrar alarmas">
                       {['Todas', 'Activas', 'Pausadas'].map((f) => (
@@ -404,6 +495,7 @@ function Home() {
                   ) : (
                     visible.map((a, i) => {
                       const Icon = icons[i % 3]
+                      const upcomingDate = nextAlarm(a, today, vacationSet)
                       return (
                         <article
                           className={`alarm-card ${!a.enabled ? 'paused' : ''}`}
@@ -415,12 +507,21 @@ function Home() {
                             </span>
                             <button
                               className="alarm-edit"
-                              onClick={() => setEdit({ ...a })}
+                              onClick={() => editAlarm(a)}
                             >
                               <span className="alarm-time">
-                                {a.time}
+                                {upcomingDate
+                                  ? hm(upcomingDate)
+                                  : (a.days.find(Boolean) ?? '—:—')}
                                 <span>
-                                  {a.enabled ? 'Programada' : 'En pausa'}
+                                  {!a.enabled
+                                    ? 'En pausa'
+                                    : upcomingDate
+                                      ? upcomingDate.toLocaleDateString('es', {
+                                          weekday: 'short',
+                                          day: 'numeric',
+                                        })
+                                      : 'Programada'}
                                 </span>
                               </span>
                               <h3>{a.name}</h3>
@@ -430,19 +531,16 @@ function Home() {
                               checked={a.enabled}
                               disabled={saving}
                               onCheckedChange={(enabled) =>
-                                void persist(
-                                  alarms.map((x) =>
-                                    x.id === a.id ? { ...x, enabled } : x,
-                                  ),
-                                )
+                                togglePlan(a, enabled)
                               }
                             />
                           </div>
                           <div className="alarm-details">
                             <span className="cycle-pill">
                               <Repeat2 size={13} />
-                              {a.work} trabajo <span> / </span> {a.rest}{' '}
-                              descanso
+                              {a.days.filter(Boolean).length} turno{' '}
+                              <span> / </span>{' '}
+                              {a.days.filter((t) => !t).length} descanso
                             </span>
                             <span className="alarm-tone">
                               <Volume2 size={13} />
@@ -451,29 +549,31 @@ function Home() {
                             <button
                               className="icon-button"
                               aria-label={`Editar ${a.name}`}
-                              onClick={() => setEdit({ ...a })}
+                              onClick={() => editAlarm(a)}
                             >
                               <MoreHorizontal size={20} />
                             </button>
                           </div>
-                          {view === 'Mis ciclos' && (
-                            <div className="cycle-preview">
-                              {Array.from(
-                                { length: Math.min(20, a.work + a.rest) },
-                                (_, j) => (
-                                  <span
-                                    key={j}
-                                    className={j < a.work ? 'work' : 'rest'}
-                                  >
-                                    {j < a.work ? 'T' : 'D'}
-                                  </span>
-                                ),
-                              )}
-                              <small>
-                                Se repite cada {a.work + a.rest} días
-                              </small>
-                            </div>
-                          )}
+                          <div className="cycle-preview">
+                            {a.days.slice(0, 28).map((t, j) => (
+                              <span
+                                key={j}
+                                className={`${t ? 'work' : 'rest'} ${j === cycleIndex(a, today) ? 'now' : ''}`}
+                                title={`Día ${j + 1}: ${t ?? 'Descanso'}`}
+                              >
+                                {t ? 'T' : 'D'}
+                              </span>
+                            ))}
+                            <button
+                              className="text-button"
+                              onClick={() => {
+                                setPlanId(a.id)
+                                setView('Planificación')
+                              }}
+                            >
+                              Ver planificación de {a.days.length} días
+                            </button>
+                          </div>
                         </article>
                       )
                     })
@@ -501,11 +601,40 @@ function Home() {
                         : 'Tus cambios se guardan automáticamente'}
                   </div>
                 </section>
+                )}
+                {view === 'Planificación' && (loading || failed) && (
+                  <section className="alarms-section">
+                    {loading ? (
+                      <div className="loading-state">Cargando tus planes…</div>
+                    ) : (
+                      <div className="empty-state">
+                        <h3>No hemos podido cargar tus planes</h3>
+                        <button className="text-button" onClick={load}>
+                          Volver a intentar
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                )}
                 <aside className="calendar-panel">
                   <div className="calendar-title">
                     <h2>Tu calendario</h2>
-                    <CalendarDays size={18} />
+                    <button
+                      className={`vacation-toggle ${vacationMode ? 'on' : ''}`}
+                      aria-pressed={vacationMode}
+                      disabled={loading || failed}
+                      onClick={() => setVacationMode((v) => !v)}
+                    >
+                      <TreePalm size={14} />
+                      {vacationMode ? 'Listo' : 'Vacaciones'}
+                    </button>
                   </div>
+                  {vacationMode && (
+                    <p className="vacation-hint">
+                      Pulsa los días de vacaciones. Ese día no sonará ninguna
+                      alarma y el ciclo sigue contando igual.
+                    </p>
+                  )}
                   <div className="month-nav">
                     <strong>{monthLabel}</strong>
                     <div>
@@ -532,21 +661,34 @@ function Home() {
                       </span>
                     ))}
                     {calendar.map((d) => {
+                      const vacation = vacationSet.has(dateKey(d))
                       const work = alarms.some(
-                        (a) => a.enabled && activeOn(a, d),
+                        (a) => a.enabled && shiftTime(a, d),
                       )
                       return (
                         <button
-                          aria-label={d.toLocaleDateString('es', {
+                          aria-label={`${d.toLocaleDateString('es', {
                             day: 'numeric',
                             month: 'long',
-                          })}
+                          })}${vacation ? ', vacaciones' : ''}`}
+                          aria-pressed={vacationMode ? vacation : undefined}
                           key={dateKey(d)}
-                          onClick={() => setSelectedDay(d)}
-                          className={`calendar-day ${d.getMonth() !== month.getMonth() ? 'outside' : ''} ${dateKey(d) === dateKey(today) ? 'is-today' : ''} ${selectedDay && dateKey(d) === dateKey(selectedDay) ? 'is-selected' : ''}`}
+                          onClick={() => {
+                            setSelectedDay(d)
+                            if (vacationMode) void toggleVacation(d)
+                          }}
+                          className={`calendar-day ${d.getMonth() !== month.getMonth() ? 'outside' : ''} ${dateKey(d) === dateKey(today) ? 'is-today' : ''} ${selectedDay && dateKey(d) === dateKey(selectedDay) ? 'is-selected' : ''} ${vacation ? 'is-vacation' : ''}`}
                         >
                           <span>{d.getDate()}</span>
-                          <i className={work ? 'work-dot' : 'rest-dot'} />
+                          <i
+                            className={
+                              vacation
+                                ? 'vacation-dot'
+                                : work
+                                  ? 'work-dot'
+                                  : 'rest-dot'
+                            }
+                          />
                         </button>
                       )
                     })}
@@ -557,6 +699,9 @@ function Home() {
                     </span>
                     <span>
                       <i className="rest-dot" /> Descanso
+                    </span>
+                    <span>
+                      <i className="vacation-dot" /> Vacaciones
                     </span>
                     <span>
                       <i className="today-dot" /> Hoy
@@ -572,16 +717,30 @@ function Home() {
                             month: 'long',
                           })}
                         </h3>
-                        {alarms
-                          .filter((a) => a.enabled && activeOn(a, selectedDay))
-                          .map((a) => (
+                        {selectedVacation ? (
+                          <p>
+                            De vacaciones: no sonará ninguna alarma este día.
+                          </p>
+                        ) : (
+                          selectedShifts.map(({ a, time }) => (
                             <p key={a.id}>
-                              {a.time} · {a.name}
+                              {time} · {a.name} · Día{' '}
+                              {(cycleIndex(a, selectedDay) ?? 0) + 1}
                             </p>
-                          ))}
-                        {!alarms.some(
-                          (a) => a.enabled && activeOn(a, selectedDay),
-                        ) && <p>Un día sin alarmas. Disfruta del descanso.</p>}
+                          ))
+                        )}
+                        {!selectedVacation && !selectedShifts.length && (
+                          <p>Un día sin alarmas. Disfruta del descanso.</p>
+                        )}
+                        <button
+                          className="text-button"
+                          disabled={saving}
+                          onClick={() => void toggleVacation(selectedDay)}
+                        >
+                          {selectedVacation
+                            ? 'Quitar vacaciones'
+                            : 'Marcar como vacaciones'}
+                        </button>
                       </>
                     ) : (
                       <>
@@ -592,6 +751,7 @@ function Home() {
                           <h3>El descanso también cuenta</h3>
                           <p>
                             Tus alarmas respetan los días libres de cada ciclo.
+                            Marca tus vacaciones y no sonarán esos días.
                           </p>
                         </div>
                       </>
@@ -632,11 +792,12 @@ function Home() {
           <DialogHeader>
             <DialogTitle>
               {alarms.some((a) => a.id === edit?.id)
-                ? 'Editar alarma'
-                : 'Un nuevo ritmo'}
+                ? 'Configurar plan'
+                : 'Nuevo plan de turnos'}
             </DialogTitle>
             <DialogDescription>
-              Elige tu hora y los días de trabajo y descanso que se repiten.
+              Nombre, Día 1 del ciclo y sonido. Cada día se ajusta desde la
+              planificación.
             </DialogDescription>
           </DialogHeader>
           {edit && (
@@ -646,35 +807,46 @@ function Home() {
                 const next = alarms.some((a) => a.id === edit.id)
                   ? alarms.map((a) => (a.id === edit.id ? edit : a))
                   : [...alarms, edit]
-                if (await persist(next)) {
+                if (await persist({ alarms: next })) {
+                  setPlanId(edit.id)
                   setEdit(null)
-                  toast.success('Alarma guardada')
+                  toast.success('Plan guardado')
                 }
               }}
             >
+              <label className="field-label">
+                Nombre
+                <input
+                  autoFocus
+                  required
+                  maxLength={60}
+                  placeholder="Por ejemplo, turnos rotativos"
+                  value={edit.name}
+                  onChange={(e) => setEdit({ ...edit, name: e.target.value })}
+                />
+              </label>
               <div className="form-row">
                 <label>
-                  Hora
+                  Hora para el ciclo rápido
                   <input
-                    required
                     type="time"
-                    value={edit.time}
-                    onChange={(e) => setEdit({ ...edit, time: e.target.value })}
+                    value={quickTime}
+                    onChange={(e) => setQuickTime(e.target.value || '07:00')}
                   />
                 </label>
                 <label>
-                  Nombre
-                  <input
-                    autoFocus
-                    required
-                    maxLength={60}
-                    placeholder="Por ejemplo, turno de mañana"
-                    value={edit.name}
-                    onChange={(e) => setEdit({ ...edit, name: e.target.value })}
-                  />
+                  Sonido
+                  <select
+                    value={edit.tone}
+                    onChange={(e) => setEdit({ ...edit, tone: e.target.value })}
+                  >
+                    {tones.map((t) => (
+                      <option key={t}>{t}</option>
+                    ))}
+                  </select>
                 </label>
               </div>
-              <label className="field-label">
+              <div className="field-label">
                 Ciclo rápido
                 <div className="presets">
                   {[
@@ -686,49 +858,18 @@ function Home() {
                     <button
                       type="button"
                       key={work + ':' + rest}
-                      className={
-                        edit.work === work && edit.rest === rest
-                          ? 'selected'
-                          : ''
+                      onClick={() =>
+                        setEdit({ ...edit, days: cycle(work, rest, quickTime) })
                       }
-                      onClick={() => setEdit({ ...edit, work, rest })}
                     >
                       {work} / {rest}
                     </button>
                   ))}
                 </div>
-              </label>
-              <div className="form-row">
-                <label>
-                  Días de trabajo
-                  <input
-                    required
-                    type="number"
-                    min="1"
-                    max="60"
-                    value={edit.work}
-                    onChange={(e) =>
-                      setEdit({ ...edit, work: Number(e.target.value) })
-                    }
-                  />
-                </label>
-                <label>
-                  Días de descanso
-                  <input
-                    required
-                    type="number"
-                    min="0"
-                    max="60"
-                    value={edit.rest}
-                    onChange={(e) =>
-                      setEdit({ ...edit, rest: Number(e.target.value) })
-                    }
-                  />
-                </label>
               </div>
               <div className="form-row">
                 <label>
-                  Primer día de trabajo
+                  Fecha del Día 1
                   <input
                     required
                     type="date"
@@ -740,21 +881,10 @@ function Home() {
                     }
                   />
                 </label>
-                <label>
-                  Sonido
-                  <select
-                    value={edit.tone}
-                    onChange={(e) => setEdit({ ...edit, tone: e.target.value })}
-                  >
-                    <option>Amanecer</option>
-                    <option>Brisa</option>
-                    <option>Órbita</option>
-                  </select>
-                </label>
               </div>
               <p className="form-hint">
-                <Repeat2 size={15} /> {edit.work} días con alarma y {edit.rest}{' '}
-                sin alarma. El ciclo vuelve a empezar automáticamente.
+                <Repeat2 size={15} /> {edit.days.length} días ·{' '}
+                {edit.days.map((t) => t ?? 'Descanso').join(', ')}
               </p>
               <div className="dialog-actions">
                 {alarms.some((a) => a.id === edit.id) && (
@@ -764,10 +894,12 @@ function Home() {
                     className="delete-button"
                     onClick={async () => {
                       if (
-                        await persist(alarms.filter((a) => a.id !== edit.id))
+                        await persist({
+                          alarms: alarms.filter((a) => a.id !== edit.id),
+                        })
                       ) {
                         setEdit(null)
-                        toast.success('Alarma eliminada')
+                        toast.success('Plan eliminado')
                       }
                     }}
                   >
@@ -775,7 +907,116 @@ function Home() {
                   </button>
                 )}
                 <button className="primary" disabled={saving} type="submit">
-                  {saving ? 'Guardando…' : 'Guardar alarma'}
+                  {saving ? 'Guardando…' : 'Guardar plan'}
+                  <Check size={16} />
+                </button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!dayEdit}
+        onOpenChange={(open) => {
+          if (!open && !saving) setDayEdit(null)
+        }}
+      >
+        <DialogContent className="alarm-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              {dayEdit?.isNew ? 'Añadir' : 'Configurar'} Día{' '}
+              {(dayEdit?.index ?? 0) + 1}
+            </DialogTitle>
+            <DialogDescription>
+              {dayPlan && dayEdit
+                ? `${dayPlan.name} · próxima vez: ${dateForDay(dayPlan, dayEdit.index, today).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })}`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {dayEdit && dayPlan && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault()
+                if (await saveDay(dayEdit)) setDayEdit(null)
+              }}
+            >
+              <div className="presets">
+                <button
+                  type="button"
+                  className={dayEdit.time ? 'selected' : ''}
+                  onClick={() =>
+                    setDayEdit({ ...dayEdit, time: dayEdit.time ?? '07:00' })
+                  }
+                >
+                  Turno
+                </button>
+                <button
+                  type="button"
+                  className={dayEdit.time ? '' : 'selected'}
+                  onClick={() => setDayEdit({ ...dayEdit, time: null })}
+                >
+                  Descanso
+                </button>
+              </div>
+              {dayEdit.time && (
+                <div className="form-row">
+                  <label>
+                    Hora
+                    <input
+                      required
+                      type="time"
+                      value={dayEdit.time}
+                      onChange={(e) =>
+                        setDayEdit({ ...dayEdit, time: e.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+              )}
+              <div className="dialog-actions">
+                {!dayEdit.isNew && dayPlan.days.length > 1 && (
+                  <button
+                    type="button"
+                    className="delete-button"
+                    disabled={saving}
+                    onClick={async () => {
+                      const days = dayPlan.days.filter(
+                        (_, i) => i !== dayEdit.index,
+                      )
+                      if (
+                        await persist({
+                          alarms: alarms.map((a) =>
+                            a.id === dayPlan.id ? { ...a, days } : a,
+                          ),
+                        })
+                      )
+                        setDayEdit(null)
+                    }}
+                  >
+                    Quitar día
+                  </button>
+                )}
+                {!dayEdit.isNew && dayPlan.days.length < MAX_DAYS && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={saving}
+                    onClick={async () => {
+                      const days = await saveDay(dayEdit)
+                      if (days)
+                        setDayEdit({
+                          planId: dayPlan.id,
+                          index: days.length,
+                          time: days.findLast(Boolean) ?? '07:00',
+                          isNew: true,
+                        })
+                    }}
+                  >
+                    Guardar y añadir otro
+                  </button>
+                )}
+                <button className="primary" disabled={saving} type="submit">
+                  {saving ? 'Guardando…' : 'Guardar día'}
                   <Check size={16} />
                 </button>
               </div>
@@ -821,37 +1062,28 @@ function Home() {
           </div>
         </DialogContent>
       </Dialog>
-      <Dialog
-        open={!!ringing}
-        onOpenChange={(open) => {
-          if (!open) setRinging(null)
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              <AlarmClock /> {ringing?.time}
-            </DialogTitle>
-            <DialogDescription>
-              {ringing?.name} · Es tu momento
-            </DialogDescription>
-          </DialogHeader>
-          <button className="primary" onClick={() => setRinging(null)}>
-            Detener alarma
-          </button>
-          <button
-            className="text-button"
-            onClick={() => {
-              if (ringing)
-                setSnoozed({ alarm: ringing, at: Date.now() + 5 * 60000 })
+      {ringing && (
+        <div className="ringing-screen" role="alertdialog" aria-modal="true">
+          <AlarmClock size={42} />
+          <div className="ringing-time">{ringing.time}</div>
+          <p>
+            {ringing.alarm.name} · Día{' '}
+            {(cycleIndex(ringing.alarm, today) ?? 0) + 1}
+          </p>
+          {!sound && (
+            <button className="primary" onClick={enableSound}>
+              <Volume2 size={16} /> Activar sonido
+            </button>
+          )}
+          <SlideToUnlock
+            label="Desliza para detener"
+            onUnlock={() => {
               setRinging(null)
-              toast('Alarma pospuesta 5 minutos')
+              toast.success('Alarma detenida')
             }}
-          >
-            Posponer 5 minutos
-          </button>
-        </DialogContent>
-      </Dialog>
+          />
+        </div>
+      )}
       {!sound && (
         <button className="sound-enable" onClick={enableSound}>
           <Volume2 size={15} />

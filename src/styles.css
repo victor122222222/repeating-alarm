@@ -1532,3 +1532,33 @@ footer button {
     transition: none !important;
   }
 }
+.ringing-screen{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#1f2d1a;color:#f4f8ef;padding:24px;text-align:center}
+.ringing-time{font-size:72px;font-weight:700;animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.55}}
+.slide-unlock{position:relative;width:min(340px,90vw);height:64px;border-radius:40px;background:#ffffff22;overflow:hidden;touch-action:none}
+.slide-fill{position:absolute;inset:0;width:calc(var(--p)*100%);background:#7a956655}
+.slide-label{position:absolute;inset:0;display:grid;place-items:center;font-size:14px;opacity:calc(1 - var(--p))}
+.slide-thumb{position:absolute;top:6px;left:calc(6px + var(--p)*(100% - 64px));width:52px;height:52px;border-radius:50%;background:#f4f8ef;color:#1f2d1a;display:grid;place-items:center;touch-action:none}
+.slide-unlock:not(.dragging) .slide-thumb{transition:left .2s}
+.plan-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.plan-tabs button{display:flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid #e0e6d9;border-radius:20px;font-size:11px;color:#6c7a5d}
+.plan-tabs button.selected{background:#e6efdf;border-color:#94ac80;color:#4e703d}
+.paused-dot{width:6px;height:6px;border-radius:50%;background:#c9cfc0}
+.plan-card{border:1px solid #e4e8df;background:#fefefc;border-radius:12px;padding:18px}
+.plan-header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.plan-header>div{flex:1}.plan-header h3{font-size:16px;color:#394b32}.plan-header p{font-size:10px;color:#9aa589}
+.plan-days{display:grid;gap:6px;margin-bottom:12px}
+.plan-day{width:100%;display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #e7ebe1;border-radius:9px;text-align:left}
+.plan-day.shift{background:#f3f8ee}.plan-day.rest{background:#fafaf7;color:#9aa58d}
+.plan-day.is-today{border-color:#7a9566;box-shadow:0 0 0 1px #7a9566}
+.plan-day-name{flex:1;display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;font-weight:600;color:#465f39}
+.plan-day-name small{width:100%;font-weight:400;font-size:10px;color:#9aa589;display:flex;gap:8px}
+.plan-day-name em{display:inline-flex;gap:3px;align-items:center;color:#c0833a;font-style:normal}
+.today-tag{color:#698c53}
+.plan-day-value{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:600}
+.vacation-toggle{display:flex;align-items:center;gap:5px;font-size:10px;padding:5px 10px;border:1px solid #e0e6d9;border-radius:20px;color:#8d9b7e}
+.vacation-toggle.on{background:#fbecd6;border-color:#e0b27a;color:#a5672a}
+.vacation-hint{font-size:10px;color:#a5672a;margin:-12px 0 12px}
+.calendar-day.is-vacation{background:#fbecd6}
+.vacation-dot{background:#e0a35a}
+.cycle-preview .now{outline:1px solid #698c53}
