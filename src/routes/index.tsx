@@ -1,5 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import {
   AlarmClock,
   AudioLines,
@@ -43,6 +49,12 @@ import {
   type Alarm,
 } from '@/lib/alarms'
 import { playTone } from '@/lib/sound'
+import {
+  isNativeApp,
+  openNativeSettings,
+  syncNativeAlarms,
+  testNativeAlarm,
+} from '@/lib/native-alarms'
 import { PlanView } from '@/components/plan-view'
 import { SlideToUnlock } from '@/components/slide-to-unlock'
 
@@ -50,6 +62,8 @@ export const Route = createFileRoute('/')({ component: Home })
 const days = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 const icons = [Sunrise, Sun, Moon]
 const hm = (d: Date) => d.toTimeString().slice(0, 5)
+// El puente de la app Android no cambia mientras la página está abierta.
+const noSubscribe = () => () => {}
 type DayEdit = {
   planId: string
   index: number
@@ -79,6 +93,8 @@ function Home() {
     key: string
   } | null>(null)
   const [sound, setSound] = useState(false)
+  // Verdadero solo dentro de la app Android; en el servidor y en un navegador es falso.
+  const native = useSyncExternalStore(noSubscribe, isNativeApp, () => false)
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
   const audio = useRef<AudioContext | null>(null)
   const fired = useRef(new Set<string>())
@@ -106,8 +122,14 @@ function Home() {
   function play(tone = 'Sirena') {
     if (audio.current) playTone(audio.current, tone)
   }
+  // Dentro de la app Android, la app nativa hace sonar las alarmas con el móvil bloqueado.
+  // Aquí solo le entregamos las próximas; la web no debe sonar a la vez.
   useEffect(() => {
-    if (!now || vacationSet.has(dateKey(now))) return
+    if (loading || failed) return
+    syncNativeAlarms(alarms, (a, from) => nextAlarm(a, from, vacationSet))
+  }, [alarms, vacationSet, loading, failed])
+  useEffect(() => {
+    if (native || !now || vacationSet.has(dateKey(now))) return
     for (const a of alarms) {
       const time = shiftTime(a, now)
       const key = `${a.id}-${dateKey(now)}-${time}`
@@ -116,7 +138,7 @@ function Home() {
         setRinging({ alarm: a, time, key })
       }
     }
-  }, [now, alarms, vacationSet])
+  }, [now, alarms, vacationSet, native])
   // Suena y vibra sin parar hasta que se desliza el control de desbloqueo.
   useEffect(() => {
     if (!ringing) return
@@ -357,16 +379,47 @@ function Home() {
           </div>
           {view === 'Ajustes' ? (
             <section className="settings-panel">
-              <Volume2 size={27} />
-              <h2>Sonido de las alarmas</h2>
-              <p>
-                Activa el sonido al abrir la aplicación. Mantén esta pestaña
-                abierta y el dispositivo despierto para escuchar las alarmas. El
-                navegador puede suspenderlas en segundo plano.
-              </p>
-              <button className="primary" onClick={enableSound}>
-                {sound ? 'Probar sonido' : 'Activar sonido'}
-              </button>
+              {native ? (
+                <>
+                  <AlarmClock size={27} />
+                  <h2>Alarmas del móvil</h2>
+                  <p>
+                    Las alarmas suenan aunque el móvil esté bloqueado, siempre
+                    que hayas preparado el móvil.
+                  </p>
+                  <div className="native-actions">
+                    <button
+                      className="primary"
+                      onClick={() => openNativeSettings('ajustes')}
+                    >
+                      Preparar el móvil
+                    </button>
+                    <button
+                      className="primary"
+                      onClick={() =>
+                        testNativeAlarm(
+                          alarms.find((a) => a.enabled)?.tone ?? 'Sirena',
+                        )
+                      }
+                    >
+                      Probar alarma
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Volume2 size={27} />
+                  <h2>Sonido de las alarmas</h2>
+                  <p>
+                    Activa el sonido al abrir la aplicación. Mantén esta pestaña
+                    abierta y el dispositivo despierto para escuchar las
+                    alarmas. El navegador puede suspenderlas en segundo plano.
+                  </p>
+                  <button className="primary" onClick={enableSound}>
+                    {sound ? 'Probar sonido' : 'Activar sonido'}
+                  </button>
+                </>
+              )}
               <p>
                 Las horas y los ciclos utilizan la zona horaria de este
                 dispositivo:{' '}
@@ -1044,16 +1097,29 @@ function Home() {
               La fecha de inicio es el primer día de trabajo del ciclo. Usa
               distintas fechas para alternar turnos.
             </p>
-            <h3>3. Activa el sonido</h3>
-            <p>
-              Esta es una aplicación web: necesita la pestaña abierta y el
-              dispositivo despierto. No puede garantizar alarmas con la pantalla
-              bloqueada o el navegador cerrado.
-            </p>
-            <button className="primary" onClick={enableSound}>
-              <Volume2 size={16} />
-              {sound ? 'Probar sonido' : 'Activar sonido'}
-            </button>
+            {native ? (
+              <>
+                <h3>3. Prepara el móvil</h3>
+                <p>
+                  En Ajustes, pulsa «Preparar el móvil» y activa los permisos
+                  que se indican. Después usa «Probar alarma» con el móvil
+                  bloqueado para comprobar que suena.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3>3. Activa el sonido</h3>
+                <p>
+                  Esta es una aplicación web: necesita la pestaña abierta y el
+                  dispositivo despierto. No puede garantizar alarmas con la
+                  pantalla bloqueada o el navegador cerrado.
+                </p>
+                <button className="primary" onClick={enableSound}>
+                  <Volume2 size={16} />
+                  {sound ? 'Probar sonido' : 'Activar sonido'}
+                </button>
+              </>
+            )}
             <p>
               Tus alarmas se guardan para este navegador. Borrar las cookies
               impide recuperar este espacio. Las tres alarmas iniciales son
@@ -1084,7 +1150,7 @@ function Home() {
           />
         </div>
       )}
-      {!sound && (
+      {!sound && !native && (
         <button className="sound-enable" onClick={enableSound}>
           <Volume2 size={15} />
           Activar sonido<span>Con la página abierta</span>

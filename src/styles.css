@@ -1096,6 +1096,11 @@ footer button {
   line-height: 1.9;
   margin: 16px 0;
 }
+.native-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 .empty-state,
 .loading-state {
   padding: 35px 20px;
