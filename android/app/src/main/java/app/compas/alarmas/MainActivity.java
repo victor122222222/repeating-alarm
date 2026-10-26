@@ -15,7 +15,7 @@ import android.webkit.WebViewClient;
 /** Muestra la web de Compás y le da acceso a las alarmas nativas del móvil. */
 public class MainActivity extends Activity {
     /** Dirección de la web. Cámbiala aquí si la publicas en otro dominio. */
-    static final String URL_WEB = "https://repeating-alarm.netlify.app";
+    `static final String URL_WEB = "file:///android_asset/index.html";
 
     private WebView web;
 
