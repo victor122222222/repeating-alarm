@@ -19,6 +19,12 @@ servidor**: la web va dentro de la app y las alarmas se guardan en el propio mó
   bucle, vibra y muestra la pantalla de deslizar para parar sobre el bloqueo.
 - Tras sonar, programa la siguiente de la lista sin abrir la web. Tras un reinicio, vuelve a
   programarla sola.
+- **Aviso de la próxima alarma:** desde 12 horas antes aparece una notificación silenciosa
+  "Próxima alarma: HH:MM" (con "mañana" si es de otro día), visible en el bloqueo. Se quita
+  sola al sonar la alarma. Android decide dónde se dibuja: el icono de la app sale arriba a
+  la izquierda en la barra de estado, y el texto en la lista de avisos del bloqueo. Una app
+  no puede pintar texto suelto en una esquina del bloqueo. Además, `setAlarmClock` hace que
+  Android muestre su propia "próxima alarma" en muchos móviles.
 - Los cinco tonos (Sirena, Pitido, Amanecer, Brisa, Órbita) usan las mismas notas que la
   web. Se comprobaron contra el audio real del navegador: mismas frecuencias y armónicos. La
   web pasa el sonido por un compresor que la app no imita, así que el volumen y los barridos

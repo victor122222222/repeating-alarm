@@ -60,6 +60,11 @@
             android:exported="false" />
 
         <receiver
+            android:name=".AvisoReceiver"
+            android:directBootAware="true"
+            android:exported="false" />
+
+        <receiver
             android:name=".BootReceiver"
             android:directBootAware="true"
             android:exported="true">

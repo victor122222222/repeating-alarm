@@ -48,11 +48,13 @@ final class Programador {
         Evento siguiente = buscarSiguiente(c, ahora);
         if (siguiente == null) {
             am.cancel(pendienteSonar(c, null, CODIGO_PRINCIPAL, false));
+            ProximaAlarma.cancelar(c);
             return;
         }
         long cuando = Math.max(siguiente.ts, ahora + 1000L);
         PendingIntent operacion = pendienteSonar(c, siguiente, CODIGO_PRINCIPAL, false);
         am.setAlarmClock(new AlarmManager.AlarmClockInfo(cuando, pendienteAbrirApp(c)), operacion);
+        ProximaAlarma.actualizar(c);
     }
 
     static void cancelarTodas(Context c) {
@@ -60,6 +62,7 @@ final class Programador {
         if (am == null) return;
         am.cancel(pendienteSonar(c, null, CODIGO_PRINCIPAL, false));
         Almacen.guardar(c, new java.util.ArrayList<Evento>());
+        ProximaAlarma.cancelar(c);
     }
 
     /** Hace sonar una alarma de prueba en pocos segundos, para comprobar el bloqueo. */
