@@ -10,6 +10,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -60,6 +61,37 @@ public class PuenteNativo {
             return r.toString();
         } catch (JSONException ex) {
             return error("Datos de alarmas no válidos.");
+        }
+    }
+
+    /**
+     * Lee las alarmas y vacaciones guardadas en el móvil por la web.
+     * Devuelve {"ok":true,"datos":{...}} (o "datos":null si aún no hay nada guardado)
+     * o {"ok":false,"error":"..."} si no se pudieron leer.
+     */
+    @JavascriptInterface
+    public String cargarDatos() {
+        try {
+            String texto = Datos.leer(contexto.getFilesDir());
+            JSONObject r = new JSONObject();
+            r.put("ok", true);
+            r.put("datos", texto == null ? JSONObject.NULL : new JSONObject(texto));
+            return r.toString();
+        } catch (IOException | JSONException ex) {
+            return error("No se pudieron leer los datos.");
+        }
+    }
+
+    /** Guarda en el móvil el JSON (un objeto) con las alarmas y vacaciones de la web. */
+    @JavascriptInterface
+    public String guardarDatos(String json) {
+        if (json == null) return error("No hay datos que guardar.");
+        try {
+            new JSONObject(json); // Solo se guarda si es un objeto JSON válido.
+            Datos.guardar(contexto.getFilesDir(), json);
+            return "{\"ok\":true}";
+        } catch (IOException | JSONException ex) {
+            return error("No se pudieron guardar los datos.");
         }
     }
 

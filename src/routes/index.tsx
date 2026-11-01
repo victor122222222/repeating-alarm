@@ -49,6 +49,7 @@ import {
   type Alarm,
 } from '@/lib/alarms'
 import { playTone } from '@/lib/sound'
+import { loadSchedule, saveSchedule } from '@/lib/alarms-store'
 import {
   isNativeApp,
   openNativeSettings,
@@ -102,9 +103,7 @@ function Home() {
     setLoading(true)
     setFailed(false)
     try {
-      const res = await fetch('/api/alarms')
-      if (!res.ok) throw Error()
-      const data: { alarms: Alarm[]; vacations: string[] } = await res.json()
+      const data = await loadSchedule()
       setAlarms(data.alarms)
       setVacations(data.vacations)
     } catch {
@@ -160,13 +159,7 @@ function Home() {
         alarms: next.alarms ?? alarms,
         vacations: next.vacations ?? vacations,
       }
-      const res = await fetch('/api/alarms', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) throw Error()
-      const saved: typeof body = await res.json()
+      const saved = await saveSchedule(body)
       setAlarms(saved.alarms)
       setVacations(saved.vacations)
       return true
@@ -424,7 +417,9 @@ function Home() {
                 Las horas y los ciclos utilizan la zona horaria de este
                 dispositivo:{' '}
                 {now ? Intl.DateTimeFormat().resolvedOptions().timeZone : '—'}.
-                Las alarmas se guardan para este navegador mediante una cookie.
+                {native
+                  ? 'Las alarmas se guardan en este móvil. Si desinstalas la app o borras sus datos, se pierden.'
+                  : 'Las alarmas se guardan para este navegador mediante una cookie.'}
               </p>
             </section>
           ) : (
@@ -1121,9 +1116,10 @@ function Home() {
               </>
             )}
             <p>
-              Tus alarmas se guardan para este navegador. Borrar las cookies
-              impide recuperar este espacio. Las tres alarmas iniciales son
-              ejemplos editables.
+              {native
+                ? 'Tus alarmas se guardan en este móvil. Desinstalar la app o borrar sus datos las elimina. '
+                : 'Tus alarmas se guardan para este navegador. Borrar las cookies impide recuperar este espacio. '}
+              Las tres alarmas iniciales son ejemplos editables.
             </p>
           </div>
         </DialogContent>

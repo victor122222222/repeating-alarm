@@ -23,6 +23,9 @@ type Bridge = {
   estado(): string
   abrir(tipo: string): void
   probar(tono: string): void
+  // Solo en las versiones de la app que guardan los datos en el móvil.
+  cargarDatos?(): string
+  guardarDatos?(json: string): string
 }
 
 export type NativeStatus = {
@@ -142,4 +145,39 @@ export function openNativeSettings(kind: NativeSettingsKind = 'ajustes') {
 /** Hace sonar una alarma real dentro de unos segundos, para probar con el móvil bloqueado. */
 export function testNativeAlarm(tone: string = 'Amanecer') {
   bridge()?.probar(tone)
+}
+
+/** Verdadero si la app guarda las alarmas en el propio móvil (sin servidor). */
+export function hasLocalData(): boolean {
+  const b = bridge()
+  return (
+    b !== null &&
+    typeof b.cargarDatos === 'function' &&
+    typeof b.guardarDatos === 'function'
+  )
+}
+
+/**
+ * Lee los datos guardados en el móvil. Devuelve `null` si todavía no hay nada guardado
+ * (primer uso) y lanza un error si la app no pudo leerlos, para no sobrescribirlos.
+ */
+export function readLocalData(): unknown | null {
+  const b = bridge()
+  if (!b?.cargarDatos) throw new Error('Sin almacenamiento local')
+  const result = JSON.parse(b.cargarDatos()) as {
+    ok: boolean
+    datos?: unknown
+  }
+  if (!result.ok) throw new Error('No se pudieron leer los datos')
+  return result.datos ?? null
+}
+
+/** Guarda los datos en el móvil. Lanza un error si la app no pudo guardarlos. */
+export function writeLocalData(data: unknown): void {
+  const b = bridge()
+  if (!b?.guardarDatos) throw new Error('Sin almacenamiento local')
+  const result = JSON.parse(b.guardarDatos(JSON.stringify(data))) as {
+    ok: boolean
+  }
+  if (!result.ok) throw new Error('No se pudieron guardar los datos')
 }

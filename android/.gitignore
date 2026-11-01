@@ -4,3 +4,5 @@ local.properties
 .idea/
 *.iml
 *.apk
+# La web compilada se genera en cada compilación (vite.android.config.ts)
+app/src/main/assets/web/
