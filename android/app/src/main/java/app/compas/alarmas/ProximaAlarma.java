@@ -15,9 +15,12 @@ import android.content.Intent;
  */
 final class ProximaAlarma {
     static final String ACCION_AVISO = "app.compas.alarmas.AVISO";
-    static final String CANAL = "compas_proxima";
+    /** Canal v2: con importancia normal (sin sonido) sale en la parte principal del bloqueo, no en "Silenciado". */
+    static final String CANAL = "compas_proxima2";
+    private static final String CANAL_ANTIGUO = "compas_proxima";
     static final int ID_NOTIFICACION = 4203;
     private static final int CODIGO_AVISO = 3;
+    private static final int CODIGO_DESCARTE = 4;
 
     private ProximaAlarma() {}
 
@@ -59,13 +62,14 @@ final class ProximaAlarma {
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null || !nm.areNotificationsEnabled()) return;
         NotificationChannel canal = new NotificationChannel(
-                CANAL, "Próxima alarma", NotificationManager.IMPORTANCE_LOW);
+                CANAL, "Próxima alarma", NotificationManager.IMPORTANCE_DEFAULT);
         canal.setDescription("Hora de la próxima alarma, desde 12 horas antes");
         canal.setSound(null, null);
         canal.enableVibration(false);
         canal.setShowBadge(false);
         canal.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         nm.createNotificationChannel(canal);
+        nm.deleteNotificationChannel(CANAL_ANTIGUO);
 
         PendingIntent abrir = PendingIntent.getActivity(c, 0, new Intent(c, MainActivity.class),
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -81,7 +85,10 @@ final class ProximaAlarma {
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setTimeoutAfter(e.ts - ahora + 60000L)
                 .setContentIntent(abrir)
+                // Si el usuario la desliza (Android 14 lo permite aunque sea fija), vuelve a salir.
+                .setDeleteIntent(pendienteDescarte(c))
                 .build();
+        n.flags |= Notification.FLAG_ONGOING_EVENT | Notification.FLAG_NO_CLEAR;
         nm.notify(ID_NOTIFICACION, n);
     }
 
@@ -94,6 +101,14 @@ final class ProximaAlarma {
         Intent i = new Intent(c, AvisoReceiver.class);
         i.setAction(ACCION_AVISO);
         return PendingIntent.getBroadcast(c, CODIGO_AVISO, i,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    private static PendingIntent pendienteDescarte(Context c) {
+        Intent i = new Intent(c, AvisoReceiver.class);
+        i.setAction(ACCION_AVISO);
+        i.putExtra("descartada", true);
+        return PendingIntent.getBroadcast(c, CODIGO_DESCARTE, i,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 }
