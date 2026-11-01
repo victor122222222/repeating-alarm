@@ -20,8 +20,8 @@ servidor**: la web va dentro de la app y las alarmas se guardan en el propio mó
 - Tras sonar, programa la siguiente de la lista sin abrir la web. Tras un reinicio, vuelve a
   programarla sola.
 - **Aviso de la próxima alarma:** desde 12 horas antes aparece una notificación silenciosa
-  "Próxima alarma: HH:MM" (con "mañana" si es de otro día), visible en el bloqueo. Se quita
-  sola al sonar la alarma. Android decide dónde se dibuja: el icono de la app sale arriba a
+  "Próxima alarma: HH:MM" (con "mañana" si es de otro día), visible en el bloqueo. Es fija: si la deslizas
+  vuelve a aparecer, y se quita sola al sonar la alarma. Android decide dónde se dibuja: el icono de la app sale arriba a
   la izquierda en la barra de estado, y el texto en la lista de avisos del bloqueo. Una app
   no puede pintar texto suelto en una esquina del bloqueo. Además, `setAlarmClock` hace que
   Android muestre su propia "próxima alarma" en muchos móviles.
