@@ -6,16 +6,36 @@ on:
     branches: [main]
     paths:
       - 'android/**'
+      - 'android-web/**'
+      - 'src/**'
+      - 'vite.android.config.ts'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/apk.yml'
 
 jobs:
   apk:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: android
     steps:
       - uses: actions/checkout@v4
+
+      # 1. La web, compilada como páginas estáticas que van dentro de la app.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Instalar las dependencias de la web
+        run: pnpm install --frozen-lockfile
+      - name: Compilar la web para la app
+        run: pnpm exec vite build --config vite.android.config.ts
+      - name: Comprobar que la web está dentro de la app
+        run: |
+          test -s android/app/src/main/assets/web/index.html
+          ls -R android/app/src/main/assets/web
+
+      # 2. La app Android, con la web dentro.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -23,8 +43,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Compilar
+      - name: Compilar la app
+        working-directory: android
         run: gradle assembleDebug --no-daemon
+
       - name: Subir el APK
         uses: actions/upload-artifact@v4
         with:

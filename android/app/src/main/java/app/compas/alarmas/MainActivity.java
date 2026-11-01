@@ -6,17 +6,17 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
-import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-/** Muestra la web de Compás y le da acceso a las alarmas nativas del móvil. */
+/**
+ * Muestra la web de Compás, que va dentro de la app (assets/web), y le da acceso a las
+ * alarmas nativas del móvil y al guardado de datos. No necesita ningún servidor.
+ */
 public class MainActivity extends Activity {
-    /** Dirección de la web. Cámbiala aquí si la publicas en otro dominio. */
-    static final String URL_WEB = "file:///android_asset/index.html";
-
     private WebView web;
 
     @Override
@@ -30,14 +30,24 @@ public class MainActivity extends Activity {
         ajustes.setJavaScriptEnabled(true);
         ajustes.setDomStorageEnabled(true);
         ajustes.setMediaPlaybackRequiresUserGesture(false);
-        CookieManager.getInstance().setAcceptCookie(true);
+        ajustes.setAllowFileAccess(false);
+        ajustes.setAllowContentAccess(false);
 
-        final String host = Uri.parse(URL_WEB).getHost();
         web.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView vista,
+                                                              WebResourceRequest peticion) {
+                Uri destino = peticion.getUrl();
+                if (RecursosWeb.esNuestra(destino) && "GET".equals(peticion.getMethod())) {
+                    return RecursosWeb.responder(getAssets(), destino);
+                }
+                return null;
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView vista, WebResourceRequest peticion) {
                 Uri destino = peticion.getUrl();
-                if (host != null && host.equals(destino.getHost())) {
+                if (RecursosWeb.esNuestra(destino)) {
                     return false;
                 }
                 // Los enlaces a otras webs se abren fuera, para que no tengan acceso al puente.
@@ -54,7 +64,7 @@ public class MainActivity extends Activity {
         if (estado != null) {
             web.restoreState(estado);
         } else {
-            web.loadUrl(URL_WEB);
+            web.loadUrl(RecursosWeb.INICIO);
         }
 
         // La primera vez, guiamos al usuario por los ajustes que hacen falta para que
@@ -80,8 +90,6 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
-        // Guarda ya la cookie del dispositivo: es la que identifica tus alarmas en el servidor.
-        CookieManager.getInstance().flush();
         web.onPause();
         super.onPause();
     }

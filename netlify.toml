@@ -1,6 +1,9 @@
 [build]
   command = "vite build"
   publish = "dist/client"
+  # No gastar un despliegue (15 créditos) si solo cambia la app Android o su compilación.
+  # Sale con 0 (se omite el despliegue) cuando no hay cambios fuera de esas carpetas.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':(exclude)android' ':(exclude)android-web' ':(exclude).github' ':(exclude)vite.android.config.ts'"
 [build.environment]
   NODE_VERSION = "24"
 [dev]

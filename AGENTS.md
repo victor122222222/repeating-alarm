@@ -6,6 +6,8 @@ Aplicación web en español de alarmas por turnos. React 19, TypeScript estricto
 
 - `src/routes/index.tsx`: pantalla principal, navegación interna, formularios y calendario, control de audio y disparo de alarmas.
 - `src/routes/__root.tsx`: documento HTML en español, metadatos, proveedores y avisos.
+- `src/lib/alarms-store.ts`: carga y guarda alarmas y vacaciones. En un navegador usa `/api/alarms`; dentro de la app Android las guarda en el móvil mediante el puente (`cargarDatos`/`guardarDatos`), con las mismas reglas de validación que el servidor. Es el único sitio que habla con `/api/alarms`.
+- `android-web/` y `vite.android.config.ts`: versión estática de la web que se mete dentro de la app (`pnpm exec vite build --config vite.android.config.ts` genera `android/app/src/main/assets/web`). Monta la misma pantalla principal sin servidor ni enrutador.
 - `src/lib/native-alarms.ts`: puente con la app Android (`window.CompasNativo`). Calcula las próximas ocurrencias con `nextAlarm` y se las entrega a la app, que las programa en el sistema. Fuera de la app no hace nada.
 - `src/lib/alarms.ts`: modelo Alarm, ejemplos iniciales y cálculo de días activos y siguiente alarma. Los ciclos se calculan con fechas de calendario UTC para evitar desfases de horario de verano; las horas se interpretan localmente.
 - `src/styles.css`: tema visual cálido con acentos verdes y estilos responsivos. Tipografías DM Sans y Manrope.
@@ -16,7 +18,7 @@ Aplicación web en español de alarmas por turnos. React 19, TypeScript estricto
 
 ## Convenciones
 
-Mantén las cadenas visibles en español. Usa hooks React y el alias `@/`. No accedas a APIs del navegador durante SSR. Respeta los estados de carga, error y guardado; no muestres un cambio como guardado si falla la API. Los ejemplos se crean una vez para cada navegador nuevo. No uses localStorage para guardar alarmas; la persistencia está en Netlify Database.
+Mantén las cadenas visibles en español. Usa hooks React y el alias `@/`. No accedas a APIs del navegador durante SSR. Respeta los estados de carga, error y guardado; no muestres un cambio como guardado si falla la API. Los ejemplos se crean una vez para cada navegador nuevo. No uses localStorage para guardar alarmas; en la web la persistencia está en Netlify Database y en la app Android, en un archivo del móvil (vía `alarms-store.ts`). No llames a `/api/alarms` desde otro sitio.
 
 Drizzle requiere las versiones beta que incluyen el adaptador `drizzle-orm/netlify-db`. Cambiar el esquema requiere generar una migración; no apliques migraciones manualmente. Las funciones se inicializan dentro del handler.
 
