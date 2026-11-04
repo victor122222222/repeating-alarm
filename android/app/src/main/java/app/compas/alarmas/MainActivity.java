@@ -86,6 +86,14 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         web.onResume();
+        if (AlarmService.activo) {
+            // Hay una alarma sonando: se muestra su pantalla para poder pararla.
+            try {
+                startActivity(AlarmService.intentPantalla(this));
+            } catch (RuntimeException ignorada) {
+                // Sin acción.
+            }
+        }
     }
 
     @Override

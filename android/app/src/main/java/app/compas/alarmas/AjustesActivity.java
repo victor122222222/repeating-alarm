@@ -78,8 +78,19 @@ public class AjustesActivity extends Activity {
                     });
         }
 
+        boolean superponer = android.provider.Settings.canDrawOverlays(this);
+        fila("3. Alarma sobre otras apps", superponer,
+                "Hace que la alarma salte a pantalla completa aunque el móvil esté desbloqueado "
+                        + "y estés usando otra app.",
+                "Permitir", new Runnable() {
+                    @Override
+                    public void run() {
+                        Ajustes.abrir(AjustesActivity.this, "superponer");
+                    }
+                });
+
         boolean bateria = pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
-        fila("3. Batería sin restricciones", bateria,
+        fila("4. Batería sin restricciones", bateria,
                 "Evita que el ahorro de batería cierre la app y se pierdan las alarmas.",
                 "Quitar restricciones", new Runnable() {
                     @Override
@@ -89,7 +100,7 @@ public class AjustesActivity extends Activity {
                 });
 
         if (Ajustes.esXiaomi()) {
-            filaSinComprobar("4. Inicio automático (Xiaomi)",
+            filaSinComprobar("5. Inicio automático (Xiaomi)",
                     "Actívalo para Compás. Xiaomi no deja comprobarlo desde la app.",
                     "Abrir inicio automático", new Runnable() {
                         @Override
@@ -97,7 +108,7 @@ public class AjustesActivity extends Activity {
                             Ajustes.abrir(AjustesActivity.this, "inicioAutomatico");
                         }
                     });
-            filaSinComprobar("5. Permisos de Xiaomi",
+            filaSinComprobar("6. Permisos de Xiaomi",
                     "Activa \"Mostrar en la pantalla de bloqueo\" y \"Mostrar ventanas emergentes "
                             + "mientras se ejecuta en segundo plano\". En Ahorro de batería de la app, "
                             + "elige \"Sin restricciones\".",
@@ -107,7 +118,7 @@ public class AjustesActivity extends Activity {
                             Ajustes.abrir(AjustesActivity.this, "permisosXiaomi");
                         }
                     });
-            filaSinComprobar("6. Fijar la app en Recientes",
+            filaSinComprobar("7. Fijar la app en Recientes",
                     "Abre Recientes, mantén pulsada la tarjeta de Compás y toca el candado. "
                             + "Así Xiaomi no la cierra al limpiar aplicaciones.",
                     null, null);

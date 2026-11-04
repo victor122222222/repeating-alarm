@@ -56,6 +56,9 @@ final class Ajustes {
                             Uri.parse("package:" + paquete));
                 }
                 return detallesDeLaApp(c);
+            case "superponer":
+                return new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:" + paquete));
             case "bateria":
                 return new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                         Uri.parse("package:" + paquete));

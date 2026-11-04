@@ -29,6 +29,8 @@ public class AlarmService extends Service {
     static final String ACCION_SONAR = "app.compas.alarmas.SERVICIO_SONAR";
     /** Aviso interno (solo dentro de la app) de que la alarma se ha detenido. */
     static final String ACCION_PARADA = "app.compas.alarmas.PARADA";
+    /** Se envía al descartar (deslizar) la notificación: vuelve a mostrarla y abre la pantalla. */
+    static final String ACCION_REABRIR = "app.compas.alarmas.REABRIR";
     static final String CANAL = "compas_alarma";
     static final String CANAL_RESPALDO = "compas_alarma_respaldo";
     static final int ID_NOTIFICACION = 4201;
@@ -37,6 +39,9 @@ public class AlarmService extends Service {
     private static final long MAXIMO_MS = 15L * 60L * 1000L;
 
     static volatile boolean activo = false;
+    /** Datos de la alarma que suena, para poder volver a abrir su pantalla. */
+    static volatile String nombreActual = "Alarma";
+    static volatile String horaActual = "";
     private static volatile AlarmService instancia = null;
 
     private AudioTrack pista;
@@ -64,8 +69,44 @@ public class AlarmService extends Service {
         }
     }
 
+    /** Intent que abre la pantalla completa de la alarma que está sonando. */
+    static Intent intentPantalla(Context c) {
+        Intent abrir = new Intent(c, AlarmRingActivity.class);
+        abrir.putExtra("nombre", nombreActual);
+        abrir.putExtra("hora", horaActual);
+        abrir.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        return abrir;
+    }
+
+    /**
+     * Abre la pantalla de alarma directamente. Con el móvil desbloqueado Android solo enseña
+     * una notificación flotante, así que se lanza la pantalla a mano (necesita el permiso
+     * "Mostrar sobre otras apps"; sin él, queda la notificación y se puede tocar).
+     */
+    private void abrirPantalla() {
+        try {
+            startActivity(intentPantalla(this));
+        } catch (RuntimeException ignorada) {
+            // Android no deja abrirla desde aquí: queda la notificación.
+        }
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACCION_REABRIR.equals(intent.getAction())) {
+            // Descartaron la notificación sin querer: se vuelve a poner y se abre la pantalla.
+            if (activo && !detenido) {
+                Notification n = construirNotificacion(this, nombreActual, horaActual, CANAL);
+                if (Build.VERSION.SDK_INT >= 29) {
+                    startForeground(ID_NOTIFICACION, n,
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+                } else {
+                    startForeground(ID_NOTIFICACION, n);
+                }
+                abrirPantalla();
+            }
+            return START_NOT_STICKY;
+        }
         String nombre = intent != null ? intent.getStringExtra("nombre") : null;
         String hora = intent != null ? intent.getStringExtra("hora") : null;
         String tono = intent != null ? intent.getStringExtra("tono") : null;
@@ -76,6 +117,8 @@ public class AlarmService extends Service {
         instancia = this;
         activo = true;
         detenido = false;
+        nombreActual = nombre;
+        horaActual = hora;
 
         crearCanal(this);
         Notification notificacion = construirNotificacion(this, nombre, hora, CANAL);
@@ -89,6 +132,7 @@ public class AlarmService extends Service {
         adquirirBloqueo();
         detenerSonido();
         iniciarSonido(tono);
+        abrirPantalla();
         manejador.removeCallbacks(limite);
         manejador.postDelayed(limite, MAXIMO_MS);
         return START_NOT_STICKY;
@@ -198,6 +242,9 @@ public class AlarmService extends Service {
         abrir.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pi = PendingIntent.getActivity(c, 3, abrir,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent descartada = PendingIntent.getService(c, 4,
+                new Intent(c, AlarmService.class).setAction(ACCION_REABRIR),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b = new Notification.Builder(c, canal)
                 .setSmallIcon(R.drawable.ic_notif)
                 .setContentTitle(hora + " · " + nombre)
@@ -208,6 +255,9 @@ public class AlarmService extends Service {
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setContentIntent(pi)
                 .setFullScreenIntent(pi, true);
+        if (CANAL.equals(canal)) {
+            b.setDeleteIntent(descartada);
+        }
         return b.build();
     }
 }
