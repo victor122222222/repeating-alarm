@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Compás · Alarmas por turnos</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root{
+    --bg: #f4f0e8; --card: #fffdf9; --ink: #141d18; --muted: #6f7d75;
+    --line: #e4ddd0; --work: #2f6d4f; --work-soft: #e3efe6;
+    --rest: #b8842f; --rest-soft: #f7ecda; --radius: 18px;
+    --shadow: 0 1px 2px rgba(20,29,24,.04), 0 12px 28px -18px rgba(20,29,24,.35);
+  }
+  body{ margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); line-height: 1.5; }
+  .wrap{ width: min(760px, 100% - 2.5rem); margin-inline: auto; }
+  
+  .topbar{ position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px); background: color-mix(in srgb, var(--bg) 82%, transparent); border-bottom: 1px solid var(--line); }
+  .topbar__inner{ display: flex; justify-content: space-between; padding: .9rem 0; }
+  .brand{ font-weight: 700; font-size: 1.02rem; display: flex; align-items: center; gap: .45rem; }
+  .brand__dot{ width: 9px; height: 9px; border-radius: 50%; background: var(--work); box-shadow: 0 0 0 4px var(--work-soft); }
+  
+  .hero{ padding: 3rem 0 1.5rem; }
+  .eyebrow{ font-size: .72rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem; }
+  h1{ margin: 0 0 1rem; font-family: Georgia, serif; font-weight: 400; font-size: clamp(2.3rem, 7.5vw, 4rem); line-height: 1.02; }
+  .hero__sub{ margin: 0; color: var(--muted); font-size: 1.12rem; }
+
+  #nativePanel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.2rem; margin-bottom: 2rem; box-shadow: var(--shadow); display: none; }
+  #nativePanel.active { display: block; }
+  #debugText { margin: 0 0 1rem 0; font-size: 0.9rem; }
+  .btn-action { background: var(--work); color: white; border: none; border-radius: 8px; padding: 0.8rem; width: 100%; font-weight: 600; font-size: 0.95rem; cursor: pointer; margin-bottom: 0.5rem; }
+  .btn-action.sec { background: transparent; color: var(--work); border: 1px solid var(--work); }
+
+  .alarms__head{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .alarms__title{ margin: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; }
+  .count{ background: var(--work); color: #fff; border-radius: 99px; padding: 0 .5rem; font-size: .8rem; }
+  .btn-add{ padding: .5rem 1rem; border-radius: 99px; border: 1px solid var(--line); background: var(--card); font-weight: 600; cursor: pointer; }
+  
+  .list{ list-style: none; padding: 0; margin: 0 0 3rem 0; display: grid; gap: 1rem; }
+  .card{ background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.1rem; box-shadow: var(--shadow); }
+  .card.is-off{ opacity: .6; }
+  .card__top{ display: flex; justify-content: space-between; margin-bottom: 1rem; }
+  .card__title{ margin: 0; font-size: 1.1rem; }
+  .card__meta{ margin: .2rem 0 0; font-size: .85rem; color: var(--muted); }
+  .card__actions{ display: flex; gap: .5rem; align-items: center; }
+  .switch{ width: 48px; height: 28px; border-radius: 99px; border: 1px solid var(--line); background: #e7e1d5; position: relative; cursor: pointer; }
+  .switch span{ width: 20px; height: 20px; background: #fff; border-radius: 50%; position: absolute; top: 3px; left: 3px; transition: .2s; }
+  .switch[aria-checked="true"]{ background: var(--work); }
+  .switch[aria-checked="true"] span{ left: 23px; }
+  .btn-del, .btn-dup{ background: transparent; border: none; font-size: 1.2rem; color: var(--muted); cursor: pointer; }
+
+  .day-list { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+  .day-row { display: flex; justify-content: space-between; padding: .8rem 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .day-row:last-child { border-bottom: none; }
+  .day-label.is-today { font-weight: 700; }
+  .day-value.is-rest { color: var(--muted); }
+
+  .calendar-section{ padding-bottom: 3rem; }
+  .calendar{ background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; max-width: 480px; margin: auto; }
+  .calendar__header{ display: flex; justify-content: space-between; margin-bottom: 1rem; }
+  .calendar__nav{ background: transparent; border: 1px solid var(--line); border-radius: 50%; width: 32px; height: 32px; cursor: pointer; }
+  .calendar__weekdays{ display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: .75rem; font-weight: 700; color: var(--muted); margin-bottom: .5rem; }
+  .calendar__grid{ display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-day{ aspect-ratio: 1; border-radius: 8px; border: none; background: transparent; cursor: pointer; }
+  .cal-day.is-today{ border: 1px solid var(--work); font-weight: bold; }
+  .cal-day.is-vacation{ background: var(--work); color: white; }
+  .calendar__foot{ display: flex; justify-content: space-between; margin-top: 1rem; font-size: .85rem; }
+  .calendar__clear{ background: transparent; border: 1px solid var(--line); border-radius: 99px; padding: .3rem .8rem; cursor: pointer; }
+
+  .modal{ position: fixed; inset: 0; display: grid; place-items: center; padding: 1rem; background: rgba(0,0,0,.4); z-index: 100; }
+  .modal[hidden]{ display: none; }
+  .modal__content{ background: var(--card); width: 100%; max-width: 500px; border-radius: var(--radius); padding: 1.5rem; max-height: 90vh; overflow-y: auto; }
+  .modal__head{ display: flex; justify-content: space-between; margin-bottom: 1rem; }
+  .modal__title{ margin: 0; font-family: Georgia, serif; }
+  .modal__close{ background: none; border: none; font-size: 1.5rem; cursor: pointer; }
+  .builder-date{ display: flex; flex-direction: column; margin-bottom: 1rem; gap: .3rem; font-weight: 600; font-size: .9rem; }
+  .builder-list{ border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 1rem; max-height: 200px; overflow-y: auto; }
+  .builder-row{ display: flex; justify-content: space-between; align-items: center; padding: .6rem 0; border-bottom: 1px solid var(--line); }
+  .builder-row:last-child{ border-bottom: none; }
+  .builder-row__toggle{ font-size: .75rem; font-weight: 700; padding: .3rem .6rem; border-radius: 6px; border: none; cursor: pointer; background: var(--work-soft); color: var(--work); }
+  .builder-row__toggle.is-rest{ background: var(--rest-soft); color: var(--rest); }
+  .builder-row__del{ background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--muted); }
+  .btn-add-day{ width: 100%; padding: .8rem; border: 1px dashed var(--line); background: transparent; border-radius: 8px; cursor: pointer; margin-bottom: 1rem; font-weight: 600; color: var(--muted); }
+  .modal__actions{ display: flex; justify-content: flex-end; gap: .5rem; }
+  .btn-primary{ background: var(--work); color: white; border: none; padding: .6rem 1.2rem; border-radius: 99px; font-weight: 600; cursor: pointer; }
+  .btn-ghost{ background: transparent; border: 1px solid var(--line); padding: .6rem 1.2rem; border-radius: 99px; cursor: pointer; }
+
+  /* PANTALLA COMPLETA DE ALARMA */
+  #fullScreenAlarm {
+    display: none; position: fixed; inset: 0; background: #2f6d4f; color: white;
+    z-index: 9999; flex-direction: column; justify-content: center; align-items: center;
+    text-align: center; padding: 2rem;
+  }
+  #fullScreenAlarm.active { display: flex; }
+  .alarm-icon { font-size: 5rem; margin-bottom: 1rem; animation: pulse 1s infinite alternate; }
+  @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.1); } }
+  .alarm-title { font-size: 2.5rem; font-family: Georgia, serif; margin-bottom: 4rem; }
+  
+  /* BOTÓN DESLIZADOR */
+  .slider-container {
+    width: 320px; max-width: 100%; height: 70px;
+    background: rgba(255,255,255,0.2); border-radius: 35px;
+    position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 2px 10px rgba(0,0,0,0.1);
+  }
+  .slider-text {
+    position: absolute; z-index: 1; font-weight: bold; font-size: 1.1rem;
+    pointer-events: none; opacity: 0.8; animation: slideText 2s infinite;
+  }
+  @keyframes slideText { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+  .slider-handle {
+    width: 70px; height: 70px; background: white; border-radius: 50%;
+    position: absolute; left: 0; top: 0; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    color: #2f6d4f; font-size: 1.5rem; font-weight: bold;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2); cursor: grab;
+    transition: left 0.1s ease-out;
+  }
+  .slider-handle:active { cursor: grabbing; }
+</style>
+</head>
+<body>
+
+<!-- PANTALLA COMPLETA DE LA ALARMA (Oculta por defecto) -->
+<div id="fullScreenAlarm">
+  <div class="alarm-icon">⏰</div>
+  <div class="alarm-title">¡Hora de trabajar!</div>
+  
+  <div class="slider-container" id="sliderContainer">
+    <span class="slider-text">Desliza para detener</span>
+    <div class="slider-handle" id="sliderHandle">›</div>
+  </div>
+</div>
+
+<!-- APP NORMAL -->
+<header class="topbar">
+  <div class="wrap topbar__inner">
+    <div class="brand"><span class="brand__dot"></span> Compás</div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <p class="eyebrow">Un poco de orden, mucha tranquilidad</p>
+    <h1>Tus alarmas. Tu ritmo.</h1>
+    <p class="hero__sub">El trabajo cambia de turno. Tus alarmas se adaptan a ti.</p>
+  </section>
+
+  <div id="nativePanel">
+    <p id="debugText">Comprobando sistema...</p>
+    <button id="testBtn" class="btn-action">Probar Alarma en 5 segundos</button>
+    <button id="batteryBtn" class="btn-action sec">⚙️ Abrir Ajustes de Batería</button>
+  </div>
+
+  <section class="alarms">
+    <div class="alarms__head">
+      <h2 class="alarms__title">Mis alarmas <span class="count" id="count">0</span></h2>
+      <button class="btn-add" id="btnAdd">+ Añadir</button>
+    </div>
+    <ul class="list" id="list"></ul>
+  </section>
+
+  <section class="calendar-section">
+    <h2 style="font-family: Georgia, serif; font-weight: 400; margin-bottom: .5rem;">Vacaciones</h2>
+    <div class="calendar">
+      <div class="calendar__header">
+        <button class="calendar__nav" id="calPrev">‹</button>
+        <span id="calMonth" style="font-weight: 700; text-transform: capitalize;"></span>
+        <button class="calendar__nav" id="calNext">›</button>
+      </div>
+      <div class="calendar__weekdays"><span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+      <div class="calendar__grid" id="calGrid"></div>
+      <div class="calendar__foot">
+        <span id="calSummary"></span>
+        <button class="calendar__clear" id="calClear" disabled>Limpiar</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="builderModal" hidden>
+  <div class="modal__content">
+    <div class="modal__head">
+      <h2 class="modal__title" id="builderTitle">Configurar ciclo</h2>
+      <button class="modal__close" data-close="modal">×</button>
+    </div>
+    <label class="builder-date">Fecha de inicio: <input type="date" id="builderStartDate"></label>
+    <div class="builder-list" id="builderList"></div>
+    <button class="btn-add-day" id="btnAddDay">+ Añadir día al ciclo</button>
+    <div class="modal__actions">
+      <button class="btn-ghost" data-close="modal">Cancelar</button>
+      <button class="btn-primary" id="builderSave" disabled>Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const ALARMS_KEY = "compas.alarms.v15";
+  const VAC_KEY = "compas.vacations.v1";
+
+  let alarms = JSON.parse(localStorage.getItem(ALARMS_KEY)) || [
+    { id: "a1", days: [{isRest:false, time:"05:00"}, {isRest:false, time:"05:00"}, {isRest:false, time:"05:00"}, {isRest:false, time:"05:00"}, {isRest:true}, {isRest:true}], sound: "Sirena", enabled: true, start: isoToday() },
+    { id: "a2", days: [{isRest:false, time:"07:00"}, {isRest:false, time:"07:00"}, {isRest:false, time:"07:00"}, {isRest:false, time:"07:00"}, {isRest:true}, {isRest:true}], sound: "Pitido", enabled: true, start: isoToday() }
+  ];
+  let vacations = JSON.parse(localStorage.getItem(VAC_KEY)) || [];
+  let editingAlarmId = null;
+  let currentBuilderDays = [];
+  
+  const now = new Date();
+  let calYear = now.getFullYear(), calMonth = now.getMonth();
+
+  const $list = document.getElementById("list"), $count = document.getElementById("count"), $btnAdd = document.getElementById("btnAdd");
+  const $calMonth = document.getElementById("calMonth"), $calGrid = document.getElementById("calGrid"), $calSummary = document.getElementById("calSummary");
+  const $builderModal = document.getElementById("builderModal"), $builderList = document.getElementById("builderList");
+  const $builderSave = document.getElementById("builderSave"), $btnAddDay = document.getElementById("btnAddDay");
+  const $builderStartDate = document.getElementById("builderStartDate");
+  const $debugText = document.getElementById("debugText"), $nativePanel = document.getElementById("nativePanel");
+
+  const $fullScreenAlarm = document.getElementById("fullScreenAlarm");
+  const $sliderContainer = document.getElementById("sliderContainer");
+  const $sliderHandle = document.getElementById("sliderHandle");
+
+  function isAndroid() { return window.Capacitor && window.Capacitor.getPlatform() === 'android'; }
+
+  async function initNative() {
+    if (!isAndroid()) return;
+    const { AlarmPlugin } = window.Capacitor.Plugins;
+    if (!AlarmPlugin) {
+      $nativePanel.classList.add("active");
+      $debugText.innerHTML = "❌ Error: El plugin AlarmPlugin no está registrado.";
+      return;
+    }
+    $nativePanel.classList.add("active");
+    $debugText.innerHTML = "⏳ Solicitando permiso...";
+    try {
+      await AlarmPlugin.requestPermissions();
+      $debugText.innerHTML = "✅ Permisos listos.";
+    } catch (e) {
+      $debugText.innerHTML = "❌ Permiso denegado.";
+    }
+  }
+
+  window.addEventListener('load', () => {
+    if (localStorage.getItem("alarm_ringing") === "true") {
+      $fullScreenAlarm.classList.add("active");
+    }
+  });
+
+  let isDragging = false, startX = 0;
+  $sliderHandle.addEventListener('touchstart', (e) => { startX = e.touches[0].clientX; isDragging = true; $sliderHandle.style.transition = 'none'; });
+  $sliderHandle.addEventListener('touchmove', (e) => {
+    if (!isDragging) return;
+    let moveX = e.touches[0].clientX - startX;
+    if (moveX > 0 && moveX <= ($sliderContainer.clientWidth - $sliderHandle.clientWidth)) $sliderHandle.style.left = moveX + 'px';
+  });
+  $sliderHandle.addEventListener('touchend', async (e) => {
+    isDragging = false;
+    $sliderHandle.style.transition = 'left 0.2s ease-out';
+    if (parseInt($sliderHandle.style.left) > ($sliderContainer.clientWidth - $sliderHandle.clientWidth - 20)) {
+      $fullScreenAlarm.classList.remove('active');
+      $sliderHandle.style.left = '0px';
+      localStorage.removeItem("alarm_ringing");
+      if (isAndroid()) {
+        const { AlarmPlugin } = window.Capacitor.Plugins;
+        if (AlarmPlugin) await AlarmPlugin.detenerAlarma();
+      }
+    } else {
+      $sliderHandle.style.left = '0px';
+    }
+  });
+
+  function isoToday() { const d = new Date(); d.setHours(12,0,0,0); return d.toISOString().slice(0,10); }
+  function toIso(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; }
+  function daysSince(isoStart) { const a = new Date(isoStart + "T12:00:00"); const b = new Date(); b.setHours(12,0,0,0); return Math.floor((b - a) / 86400000); }
+
+  function persist() { localStorage.setItem(ALARMS_KEY, JSON.stringify(alarms)); localStorage.setItem(VAC_KEY, JSON.stringify(vacations)); }
+  function alarmName(alarm) {
+    let t = alarm.days.filter(d => !d.isRest).length, d = alarm.days.filter(d => d.isRest).length;
+    return `${t ? t + ' turno' : ''} ${d ? '/ ' + d + ' descanso' : ''}`.trim();
+  }
+  function currentIndex(alarm) {
+    const diff = daysSince(alarm.start);
+    if (diff < 0) return -1;
+    return diff % alarm.days.length;
+  }
+
+  function renderCalendar() {
+    const first = new Date(calYear, calMonth, 1), last = new Date(calYear, calMonth + 1, 0);
+    let firstDayIdx = first.getDay() - 1; if (firstDayIdx < 0) firstDayIdx = 6;
+    $calMonth.textContent = new Intl.DateTimeFormat("es-ES", { month: "long", year: "numeric" }).format(first);
+    $calGrid.innerHTML = "";
+    for (let i = 0; i < firstDayIdx; i++) { $calGrid.innerHTML += "<span></span>"; }
+    for (let d = 1; d <= last.getDate(); d++) {
+      const iso = toIso(new Date(calYear, calMonth, d));
+      const btn = document.createElement("button"); btn.className = "cal-day"; btn.textContent = d;
+      if (iso === isoToday()) btn.classList.add("is-today");
+      if (vacations.includes(iso)) btn.classList.add("is-vacation");
+      btn.onclick = () => {
+        if (vacations.includes(iso)) vacations = vacations.filter(v => v !== iso);
+        else vacations.push(iso);
+        persist(); renderCalendar(); renderAlarms();
+      };
+      $calGrid.appendChild(btn);
+    }
+    $calSummary.textContent = vacations.length === 0 ? "Sin vacaciones" : `${vacations.length} días de vacaciones`;
+  }
+
+  function renderAlarms() {
+    $list.innerHTML = ""; $count.textContent = alarms.length;
+    alarms.forEach((alarm) => {
+      const card = document.createElement("li");
+      card.className = "card" + (!alarm.enabled ? " is-off" : "");
+      const todayIdx = currentIndex(alarm);
+      
+      const top = document.createElement("div"); top.className = "card__top";
+      top.innerHTML = `<div><h3 class="card__title">${alarmName(alarm)}</h3><p class="card__meta">${alarm.enabled ? 'Activa' : 'Pausada'}</p></div>`;
+      
+      const actions = document.createElement("div"); actions.className = "card__actions";
+      const sw = document.createElement("button"); sw.className = "switch"; sw.innerHTML = "<span></span>";
+      sw.setAttribute("aria-checked", alarm.enabled);
+      sw.onclick = () => { alarm.enabled = !alarm.enabled; persist(); renderAlarms(); };
+      const delBtn = document.createElement("button"); delBtn.className = "btn-del"; delBtn.innerHTML = "×";
+      delBtn.onclick = () => { alarms = alarms.filter(a => a.id !== alarm.id); persist(); renderAlarms(); };
+      actions.append(sw, delBtn); top.appendChild(actions);
+
+      const dayList = document.createElement("div"); dayList.className = "day-list";
+      alarm.days.forEach((day, idx) => {
+        const row = document.createElement("div"); row.className = "day-row";
+        row.onclick = () => openBuilder(alarm.id);
+        const isToday = (idx === todayIdx);
+        row.innerHTML = `<span class="day-label ${isToday ? 'is-today' : ''}">Día ${idx + 1}${isToday ? ' | Hoy' : ''}</span>
+                         <div class="day-value ${day.isRest ? 'is-rest' : ''}">${day.isRest ? 'Descanso' : day.time} ›</div>`;
+        dayList.appendChild(row);
+      });
+      card.append(top, dayList); $list.appendChild(card);
+    });
+  }
+
+  function openBuilder(id = null) {
+    editingAlarmId = id;
+    if (id) {
+      const a = alarms.find(x => x.id === id);
+      currentBuilderDays = JSON.parse(JSON.stringify(a.days));
+      $builderStartDate.value = a.start;
+      document.getElementById("builderTitle").textContent = "Editar ciclo";
+    } else {
+      currentBuilderDays = [];
+      $builderStartDate.value = isoToday();
+      document.getElementById("builderTitle").textContent = "Nuevo ciclo";
+    }
+    renderBuilderList(); $builderModal.hidden = false;
+  }
+
+  function renderBuilderList() {
+    $builderList.innerHTML = "";
+    currentBuilderDays.forEach((day, idx) => {
+      const row = document.createElement("div"); row.className = "builder-row";
+      row.innerHTML = `<span>Día ${idx + 1}</span>`;
+      const controls = document.createElement("div");
+      const toggle = document.createElement("button"); toggle.className = "builder-row__toggle" + (day.isRest ? " is-rest" : "");
+      toggle.textContent = day.isRest ? "Descanso" : "Trabajo";
+      toggle.onclick = () => { day.isRest = !day.isRest; renderBuilderList(); };
+      
+      if (!day.isRest) {
+        const input = document.createElement("input"); input.type = "time"; input.value = day.time;
+        input.onchange = (e) => day.time = e.target.value;
+        controls.appendChild(input);
+      }
+      const del = document.createElement("button"); del.className = "builder-row__del"; del.textContent = "×";
+      del.onclick = () => { currentBuilderDays.splice(idx, 1); renderBuilderList(); };
+      controls.append(toggle, del); row.appendChild(controls); $builderList.appendChild(row);
+    });
+    $builderSave.disabled = currentBuilderDays.length === 0;
+  }
+
+  $btnAdd.onclick = () => openBuilder();
+  $btnAddDay.onclick = () => { currentBuilderDays.push({isRest:false, time:"05:00"}); renderBuilderList(); };
+  document.querySelectorAll('[data-close="modal"]').forEach(b => b.onclick = () => $builderModal.hidden = true);
+  
+  $builderSave.onclick = () => {
+    const startDate = $builderStartDate.value || isoToday();
+    if (editingAlarmId) {
+      const a = alarms.find(x => x.id === editingAlarmId);
+      a.days = currentBuilderDays; a.start = startDate;
+    } else {
+      alarms.push({ id: Date.now().toString(), days: currentBuilderDays, enabled: true, start: startDate });
+    }
+    persist(); renderAlarms(); $builderModal.hidden = true; 
+  };
+
+  document.getElementById("calPrev").onclick = () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); };
+  document.getElementById("calNext").onclick = () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); };
+  document.getElementById("calClear").onclick = () => { vacations = []; persist(); renderCalendar(); renderAlarms(); };
+
+  renderCalendar(); renderAlarms();
+  if (isAndroid()) setTimeout(initNative, 500);
+})();
+</script>
+</body>
+</html>
