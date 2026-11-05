@@ -37,7 +37,24 @@ jobs:
       - name: Compilar la app
         working-directory: android
         run: gradle assembleDebug --no-daemon
+      - name: Preparar la llave de firma
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Falta el secreto KEYSTORE_BASE64"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/compas.jks"
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/compas.jks" >> "$GITHUB_ENV"
 
+      - name: Compilar la app
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle assembleDebug --no-daemon
       - name: Subir el APK
         uses: actions/upload-artifact@v4
         with:
